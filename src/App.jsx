@@ -14,7 +14,7 @@ const App = () => {
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { exact: "environment" } }, // Configuración para cámara trasera
+        video: { facingMode: { exact: "environment" } }, // Use rear camera
       });
       videoRef.current.srcObject = stream;
       videoRef.current.play();
@@ -23,7 +23,6 @@ const App = () => {
       alert("Could not access the rear camera. Please check your permissions.");
     }
   };
-  
 
   const captureImage = () => {
     const canvas = canvasRef.current;
@@ -93,15 +92,36 @@ const App = () => {
       <h1 className="text-2xl font-bold text-center mb-5">Ticket Scanner</h1>
 
       <div className="flex flex-col items-center space-y-4">
-        <div className="camera-wrapper">
-          <video ref={videoRef} className="border mb-4" width="100%" autoPlay muted />
-          <button onClick={startCamera} className="bg-green-500 text-white px-4 py-2 rounded">Start Camera</button>
-          <button onClick={captureImage} className="bg-blue-500 text-white px-4 py-2 rounded ml-2">Capture Image</button>
+        {/* Integrated camera view */}
+        <div className="camera-wrapper relative w-full max-w-md aspect-w-16 aspect-h-9">
+          <video
+            ref={videoRef}
+            className="absolute top-0 left-0 w-full h-full object-cover rounded-md border"
+            autoPlay
+            muted
+          />
         </div>
 
+        {/* Control buttons */}
+        <div className="flex space-x-2">
+          <button
+            onClick={startCamera}
+            className="bg-green-500 text-white px-4 py-2 rounded"
+          >
+            Start Camera
+          </button>
+          <button
+            onClick={captureImage}
+            className="bg-blue-500 text-white px-4 py-2 rounded"
+          >
+            Capture Image
+          </button>
+        </div>
+
+        {/* Image preview */}
         {image && (
-          <div className="image-preview">
-            <img src={image} alt="Captured" className="border mb-4" />
+          <div className="image-preview mt-4">
+            <img src={image} alt="Captured" className="border rounded-md mb-4 w-full max-w-md" />
             <button
               onClick={() => processImage(processingForChk)}
               className="bg-yellow-500 text-white px-4 py-2 rounded"
@@ -111,6 +131,7 @@ const App = () => {
           </div>
         )}
 
+        {/* Tickets table */}
         <table className="table-auto border-collapse border border-gray-300 w-full text-left mt-4">
           <thead>
             <tr>
@@ -142,7 +163,12 @@ const App = () => {
           </tbody>
         </table>
 
-        <button onClick={handleDownloadExcel} className="bg-purple-500 text-white px-4 py-2 rounded mt-4">Download Excel</button>
+        <button
+          onClick={handleDownloadExcel}
+          className="bg-purple-500 text-white px-4 py-2 rounded mt-4"
+        >
+          Download Excel
+        </button>
       </div>
       <canvas ref={canvasRef} className="hidden" />
     </div>
