@@ -93,12 +93,13 @@ const App = () => {
 
       <div className="flex flex-col items-center space-y-4">
         {/* Integrated camera view */}
-        <div className="camera-wrapper relative w-full max-w-md aspect-w-16 aspect-h-9">
+        <div className="camera-wrapper relative w-full max-w-md aspect-w-16 aspect-h-9 bg-black rounded-md overflow-hidden">
           <video
             ref={videoRef}
-            className="absolute top-0 left-0 w-full h-full object-cover rounded-md border"
+            className="absolute top-0 left-0 w-full h-full object-cover rounded-md"
             autoPlay
             muted
+            playsInline // Prevents floating video on mobile
           />
         </div>
 
