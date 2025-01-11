@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import Tesseract from "tesseract.js";
 import * as XLSX from "xlsx";
 
@@ -7,10 +7,12 @@ const cardTypes = ["VISA", "MASTERCARD", "mada", "AMEX", "DEBIT MASTERCARD", "DE
 const App = () => {
   const [tickets, setTickets] = useState([]);
   const [image, setImage] = useState(null);
+  const [cameraError, setCameraError] = useState(null); // For error messages
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
   const startCamera = async () => {
+    setCameraError(null); // Reset error state
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { exact: "environment" } }, // Rear camera
@@ -21,7 +23,8 @@ const App = () => {
       }
     } catch (error) {
       console.error("Error accessing rear camera:", error);
-      alert("Could not access the rear camera. Falling back to any available camera.");
+      setCameraError("Rear camera not available. Trying default camera...");
+      // Fallback to default camera
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         if (videoRef.current) {
@@ -30,7 +33,7 @@ const App = () => {
         }
       } catch (fallbackError) {
         console.error("Error accessing any camera:", fallbackError);
-        alert("No camera access is available. Please check permissions.");
+        setCameraError("No camera access available. Please check permissions.");
       }
     }
   };
@@ -87,6 +90,13 @@ const App = () => {
     <div className="min-h-screen bg-gray-100 p-5">
       <h1 className="text-2xl font-bold text-center mb-5">Ticket Scanner</h1>
 
+      {/* Error messages */}
+      {cameraError && (
+        <div className="bg-red-500 text-white px-4 py-2 rounded mb-4 text-center">
+          {cameraError}
+        </div>
+      )}
+
       {/* Camera Wrapper */}
       <div className="flex flex-col items-center space-y-4">
         <div className="relative w-full max-w-md aspect-w-16 aspect-h-9 bg-black rounded-md overflow-hidden">
@@ -95,7 +105,7 @@ const App = () => {
             className="absolute top-0 left-0 w-full h-full object-cover"
             autoPlay
             muted
-            playsInline
+            playsInline // Prevent floating video on mobile
           />
         </div>
 
