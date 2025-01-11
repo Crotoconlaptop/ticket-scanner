@@ -13,11 +13,26 @@ const App = () => {
 
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      videoRef.current.srcObject = stream;
-      videoRef.current.play();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { exact: "environment" } }, // Intentar usar cámara trasera
+      });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
     } catch (error) {
-      console.error("Error accessing the camera:", error);
+      console.error("Error accessing the rear camera. Falling back to default camera.");
+      // Fallback a cualquier cámara disponible
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play();
+        }
+      } catch (fallbackError) {
+        console.error("Error accessing any camera:", fallbackError);
+        alert("Could not access any camera. Please check permissions.");
+      }
     }
   };
 
@@ -25,13 +40,14 @@ const App = () => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const context = canvas.getContext("2d");
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    const imageData = canvas.toDataURL("image/png");
-    setImage(imageData);
+    if (video && canvas) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const context = canvas.getContext("2d");
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = canvas.toDataURL("image/png");
+      setImage(imageData);
+    }
   };
 
   const processImage = async (chk = null) => {
@@ -89,15 +105,34 @@ const App = () => {
       <h1 className="text-2xl font-bold text-center mb-5">Ticket Scanner</h1>
 
       <div className="flex flex-col items-center space-y-4">
-        <div className="camera-wrapper">
-          <video ref={videoRef} className="border mb-4" width="100%" autoPlay muted />
-          <button onClick={startCamera} className="bg-green-500 text-white px-4 py-2 rounded">Start Camera</button>
-          <button onClick={captureImage} className="bg-blue-500 text-white px-4 py-2 rounded ml-2">Capture Image</button>
+        <div className="camera-wrapper relative w-full max-w-md aspect-w-16 aspect-h-9 bg-black rounded-md overflow-hidden">
+          <video
+            ref={videoRef}
+            className="absolute top-0 left-0 w-full h-full object-cover"
+            autoPlay
+            muted
+            playsInline // Evita comportamiento flotante en móviles
+          />
+        </div>
+
+        <div className="flex space-x-2">
+          <button
+            onClick={startCamera}
+            className="bg-green-500 text-white px-4 py-2 rounded"
+          >
+            Start Camera
+          </button>
+          <button
+            onClick={captureImage}
+            className="bg-blue-500 text-white px-4 py-2 rounded"
+          >
+            Capture Image
+          </button>
         </div>
 
         {image && (
-          <div className="image-preview">
-            <img src={image} alt="Captured" className="border mb-4" />
+          <div className="image-preview mt-4">
+            <img src={image} alt="Captured" className="border rounded-md mb-4 w-full max-w-md" />
             <button
               onClick={() => processImage(processingForChk)}
               className="bg-yellow-500 text-white px-4 py-2 rounded"
@@ -138,8 +173,14 @@ const App = () => {
           </tbody>
         </table>
 
-        <button onClick={handleDownloadExcel} className="bg-purple-500 text-white px-4 py-2 rounded mt-4">Download Excel</button>
+        <button
+          onClick={handleDownloadExcel}
+          className="bg-purple-500 text-white px-4 py-2 rounded mt-4"
+        >
+          Download Excel
+        </button>
       </div>
+
       <canvas ref={canvasRef} className="hidden" />
     </div>
   );
