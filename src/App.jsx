@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import Tesseract from "tesseract.js";
 import * as XLSX from "xlsx";
 
@@ -7,20 +7,29 @@ const cardTypes = ["VISA", "MASTERCARD", "mada", "AMEX", "DEBIT MASTERCARD", "DE
 const App = () => {
   const [tickets, setTickets] = useState([]);
   const [image, setImage] = useState(null);
-  const [processingForChk, setProcessingForChk] = useState(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { exact: "environment" } }, // Use rear camera
+        video: { facingMode: { exact: "environment" } }, // Attempt to use rear camera
       });
       videoRef.current.srcObject = stream;
       videoRef.current.play();
     } catch (error) {
-      console.error("Error accessing the camera:", error);
-      alert("Could not access the rear camera. Please check your permissions.");
+      console.error("Error accessing the rear camera. Falling back to default camera.");
+      // Fallback to default camera
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true, // Use any available camera
+        });
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      } catch (fallbackError) {
+        console.error("Error accessing any camera:", fallbackError);
+        alert("Could not access any camera. Please check your permissions.");
+      }
     }
   };
 
@@ -37,7 +46,7 @@ const App = () => {
     setImage(imageData);
   };
 
-  const processImage = async (chk = null) => {
+  const processImage = async () => {
     if (!image) return;
 
     const response = await fetch(image);
@@ -51,28 +60,12 @@ const App = () => {
       let cardTypeMatch = text.match(new RegExp(cardTypes.join("|"), "i"));
 
       const newTicket = {
-        chk: chk || (chkMatch ? chkMatch[1] : "Unknown"),
+        chk: chkMatch ? chkMatch[1] : "Unknown",
         cardType: cardTypeMatch ? cardTypeMatch[0].toUpperCase() : "Unknown",
         amount: amountMatch ? parseFloat(amountMatch[1]) : 0,
       };
 
-      setTickets((prevTickets) => {
-        const existingIndex = prevTickets.findIndex(t => t.chk === newTicket.chk);
-
-        if (existingIndex >= 0) {
-          return prevTickets.map((t, i) =>
-            i === existingIndex
-              ? {
-                  ...t,
-                  amount: t.amount + newTicket.amount,
-                  cardType: `${t.cardType}, ${newTicket.cardType}`,
-                }
-              : t
-          );
-        }
-
-        return [...prevTickets, newTicket];
-      });
+      setTickets((prevTickets) => [...prevTickets, newTicket]);
 
       setImage(null); // Clear image after processing
     } catch (error) {
@@ -92,14 +85,14 @@ const App = () => {
       <h1 className="text-2xl font-bold text-center mb-5">Ticket Scanner</h1>
 
       <div className="flex flex-col items-center space-y-4">
-        {/* Integrated camera view */}
+        {/* Camera view */}
         <div className="camera-wrapper relative w-full max-w-md aspect-w-16 aspect-h-9 bg-black rounded-md overflow-hidden">
           <video
             ref={videoRef}
             className="absolute top-0 left-0 w-full h-full object-cover rounded-md"
             autoPlay
             muted
-            playsInline // Prevents floating video on mobile
+            playsInline // Prevent floating video on mobile
           />
         </div>
 
@@ -124,7 +117,7 @@ const App = () => {
           <div className="image-preview mt-4">
             <img src={image} alt="Captured" className="border rounded-md mb-4 w-full max-w-md" />
             <button
-              onClick={() => processImage(processingForChk)}
+              onClick={processImage}
               className="bg-yellow-500 text-white px-4 py-2 rounded"
             >
               Process Image
@@ -139,7 +132,6 @@ const App = () => {
               <th className="border border-gray-300 px-4 py-2">CHK</th>
               <th className="border border-gray-300 px-4 py-2">Card Type</th>
               <th className="border border-gray-300 px-4 py-2">Amount</th>
-              <th className="border border-gray-300 px-4 py-2">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -148,17 +140,6 @@ const App = () => {
                 <td className="border border-gray-300 px-4 py-2">{ticket.chk}</td>
                 <td className="border border-gray-300 px-4 py-2">{ticket.cardType}</td>
                 <td className="border border-gray-300 px-4 py-2">{ticket.amount.toFixed(2)}</td>
-                <td className="border border-gray-300 px-4 py-2">
-                  <button
-                    onClick={() => {
-                      setProcessingForChk(ticket.chk);
-                      startCamera();
-                    }}
-                    className="bg-blue-500 text-white px-2 py-1 rounded"
-                  >
-                    Add Payment
-                  </button>
-                </td>
               </tr>
             ))}
           </tbody>
