@@ -13,13 +13,17 @@ const App = () => {
 
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { exact: "environment" } }, // Configuración para cámara trasera
+      });
       videoRef.current.srcObject = stream;
       videoRef.current.play();
     } catch (error) {
       console.error("Error accessing the camera:", error);
+      alert("Could not access the rear camera. Please check your permissions.");
     }
   };
+  
 
   const captureImage = () => {
     const canvas = canvasRef.current;
