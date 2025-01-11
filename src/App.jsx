@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import Tesseract from "tesseract.js";
 import * as XLSX from "xlsx";
 
@@ -13,22 +13,24 @@ const App = () => {
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { exact: "environment" } }, // Attempt to use rear camera
+        video: { facingMode: { exact: "environment" } }, // Rear camera
       });
-      videoRef.current.srcObject = stream;
-      videoRef.current.play();
-    } catch (error) {
-      console.error("Error accessing the rear camera. Falling back to default camera.");
-      // Fallback to default camera
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true, // Use any available camera
-        });
+      if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
+      }
+    } catch (error) {
+      console.error("Error accessing rear camera:", error);
+      alert("Could not access the rear camera. Falling back to any available camera.");
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play();
+        }
       } catch (fallbackError) {
         console.error("Error accessing any camera:", fallbackError);
-        alert("Could not access any camera. Please check your permissions.");
+        alert("No camera access is available. Please check permissions.");
       }
     }
   };
@@ -37,13 +39,14 @@ const App = () => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const context = canvas.getContext("2d");
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    const imageData = canvas.toDataURL("image/png");
-    setImage(imageData);
+    if (video && canvas) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const context = canvas.getContext("2d");
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = canvas.toDataURL("image/png");
+      setImage(imageData);
+    }
   };
 
   const processImage = async () => {
@@ -57,7 +60,7 @@ const App = () => {
 
       const chkMatch = text.match(/CHK\s(\d+)/);
       const amountMatch = text.match(/SAR\s(\d+(\.\d+)?)/);
-      let cardTypeMatch = text.match(new RegExp(cardTypes.join("|"), "i"));
+      const cardTypeMatch = text.match(new RegExp(cardTypes.join("|"), "i"));
 
       const newTicket = {
         chk: chkMatch ? chkMatch[1] : "Unknown",
@@ -84,20 +87,20 @@ const App = () => {
     <div className="min-h-screen bg-gray-100 p-5">
       <h1 className="text-2xl font-bold text-center mb-5">Ticket Scanner</h1>
 
+      {/* Camera Wrapper */}
       <div className="flex flex-col items-center space-y-4">
-        {/* Camera view */}
-        <div className="camera-wrapper relative w-full max-w-md aspect-w-16 aspect-h-9 bg-black rounded-md overflow-hidden">
+        <div className="relative w-full max-w-md aspect-w-16 aspect-h-9 bg-black rounded-md overflow-hidden">
           <video
             ref={videoRef}
-            className="absolute top-0 left-0 w-full h-full object-cover rounded-md"
+            className="absolute top-0 left-0 w-full h-full object-cover"
             autoPlay
             muted
-            playsInline // Prevent floating video on mobile
+            playsInline
           />
         </div>
 
-        {/* Control buttons */}
-        <div className="flex space-x-2">
+        {/* Buttons */}
+        <div className="flex space-x-4">
           <button
             onClick={startCamera}
             className="bg-green-500 text-white px-4 py-2 rounded"
@@ -112,9 +115,9 @@ const App = () => {
           </button>
         </div>
 
-        {/* Image preview */}
+        {/* Captured Image */}
         {image && (
-          <div className="image-preview mt-4">
+          <div className="mt-4">
             <img src={image} alt="Captured" className="border rounded-md mb-4 w-full max-w-md" />
             <button
               onClick={processImage}
@@ -125,8 +128,8 @@ const App = () => {
           </div>
         )}
 
-        {/* Tickets table */}
-        <table className="table-auto border-collapse border border-gray-300 w-full text-left mt-4">
+        {/* Tickets Table */}
+        <table className="table-auto border-collapse border border-gray-300 w-full mt-4">
           <thead>
             <tr>
               <th className="border border-gray-300 px-4 py-2">CHK</th>
@@ -145,6 +148,7 @@ const App = () => {
           </tbody>
         </table>
 
+        {/* Download Button */}
         <button
           onClick={handleDownloadExcel}
           className="bg-purple-500 text-white px-4 py-2 rounded mt-4"
@@ -152,6 +156,7 @@ const App = () => {
           Download Excel
         </button>
       </div>
+
       <canvas ref={canvasRef} className="hidden" />
     </div>
   );
