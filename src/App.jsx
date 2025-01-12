@@ -7,6 +7,7 @@ const cardTypes = ["VISA", "MASTERCARD", "mada", "AMEX", "DEBIT MASTERCARD", "DE
 const App = () => {
   const [tickets, setTickets] = useState([]);
   const [image, setImage] = useState(null);
+  const [errorMessage, setErrorMessage] = useState(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
@@ -19,7 +20,7 @@ const App = () => {
       }
     } catch (error) {
       console.error("Error accessing the camera:", error);
-      alert("Could not access the camera. Please check permissions.");
+      setErrorMessage("Could not access the camera. Please check permissions.");
     }
   };
 
@@ -44,7 +45,9 @@ const App = () => {
     const blob = await response.blob();
 
     try {
-      const { data: { text } } = await Tesseract.recognize(blob, "eng");
+      const { data: { text } } = await Tesseract.recognize(blob, "eng", {
+        logger: (m) => console.log(m), // Log OCR progress
+      });
 
       const chkMatch = text.match(/CHK\s(\d+)/);
       const amountMatch = text.match(/SAR\s(\d+(\.\d+)?)/);
@@ -75,6 +78,7 @@ const App = () => {
       setImage(null); // Clear image after processing
     } catch (error) {
       console.error("Error processing the image:", error);
+      setErrorMessage("Error processing the image. Please try again.");
     }
   };
 
@@ -88,6 +92,10 @@ const App = () => {
   return (
     <div className="min-h-screen bg-gray-100 p-5">
       <h1 className="text-2xl font-bold text-center mb-5">Ticket Scanner</h1>
+
+      {errorMessage && (
+        <p className="text-red-500 text-center mb-4">{errorMessage}</p>
+      )}
 
       <div className="flex flex-col items-center space-y-4">
         <div className="relative w-full max-w-md aspect-w-16 aspect-h-9 bg-black rounded-md overflow-hidden">
