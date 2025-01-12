@@ -7,32 +7,19 @@ const cardTypes = ["VISA", "MASTERCARD", "mada", "AMEX", "DEBIT MASTERCARD", "DE
 const App = () => {
   const [tickets, setTickets] = useState([]);
   const [image, setImage] = useState(null);
-  const [processingForChk, setProcessingForChk] = useState(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { exact: "environment" } }, // Intentar usar cámara trasera
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
       }
     } catch (error) {
-      console.error("Error accessing the rear camera. Falling back to default camera.");
-      // Fallback a cualquier cámara disponible
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play();
-        }
-      } catch (fallbackError) {
-        console.error("Error accessing any camera:", fallbackError);
-        alert("Could not access any camera. Please check permissions.");
-      }
+      console.error("Error accessing the camera:", error);
+      alert("Could not access the camera. Please check permissions.");
     }
   };
 
@@ -50,7 +37,7 @@ const App = () => {
     }
   };
 
-  const processImage = async (chk = null) => {
+  const processImage = async () => {
     if (!image) return;
 
     const response = await fetch(image);
@@ -61,20 +48,19 @@ const App = () => {
 
       const chkMatch = text.match(/CHK\s(\d+)/);
       const amountMatch = text.match(/SAR\s(\d+(\.\d+)?)/);
-      let cardTypeMatch = text.match(new RegExp(cardTypes.join("|"), "i"));
+      const cardTypeMatch = text.match(new RegExp(cardTypes.join("|"), "i"));
 
       const newTicket = {
-        chk: chk || (chkMatch ? chkMatch[1] : "Unknown"),
+        chk: chkMatch ? chkMatch[1] : "Unknown",
         cardType: cardTypeMatch ? cardTypeMatch[0].toUpperCase() : "Unknown",
         amount: amountMatch ? parseFloat(amountMatch[1]) : 0,
       };
 
       setTickets((prevTickets) => {
-        const existingIndex = prevTickets.findIndex(t => t.chk === newTicket.chk);
-
-        if (existingIndex >= 0) {
-          return prevTickets.map((t, i) =>
-            i === existingIndex
+        const existingTicket = prevTickets.find((t) => t.chk === newTicket.chk);
+        if (existingTicket) {
+          return prevTickets.map((t) =>
+            t.chk === newTicket.chk
               ? {
                   ...t,
                   amount: t.amount + newTicket.amount,
@@ -83,7 +69,6 @@ const App = () => {
               : t
           );
         }
-
         return [...prevTickets, newTicket];
       });
 
@@ -111,7 +96,7 @@ const App = () => {
             className="absolute top-0 left-0 w-full h-full object-cover"
             autoPlay
             muted
-            playsInline // Evita comportamiento flotante en móviles
+            playsInline
           />
         </div>
 
@@ -134,7 +119,7 @@ const App = () => {
           <div className="image-preview mt-4">
             <img src={image} alt="Captured" className="border rounded-md mb-4 w-full max-w-md" />
             <button
-              onClick={() => processImage(processingForChk)}
+              onClick={processImage}
               className="bg-yellow-500 text-white px-4 py-2 rounded"
             >
               Process Image
@@ -148,7 +133,6 @@ const App = () => {
               <th className="border border-gray-300 px-4 py-2">CHK</th>
               <th className="border border-gray-300 px-4 py-2">Card Type</th>
               <th className="border border-gray-300 px-4 py-2">Amount</th>
-              <th className="border border-gray-300 px-4 py-2">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -157,17 +141,6 @@ const App = () => {
                 <td className="border border-gray-300 px-4 py-2">{ticket.chk}</td>
                 <td className="border border-gray-300 px-4 py-2">{ticket.cardType}</td>
                 <td className="border border-gray-300 px-4 py-2">{ticket.amount.toFixed(2)}</td>
-                <td className="border border-gray-300 px-4 py-2">
-                  <button
-                    onClick={() => {
-                      setProcessingForChk(ticket.chk);
-                      startCamera();
-                    }}
-                    className="bg-blue-500 text-white px-2 py-1 rounded"
-                  >
-                    Add Payment
-                  </button>
-                </td>
               </tr>
             ))}
           </tbody>
