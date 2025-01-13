@@ -1,27 +1,28 @@
 import React, { useState, useRef } from "react";
+import Tesseract from "tesseract.js";
+import * as XLSX from "xlsx";
+
+const cardTypes = ["VISA", "MASTERCARD", "mada", "AMEX", "DEBIT MASTERCARD", "DEBIT VISA", "GCC"];
 
 const App = () => {
+  const [tickets, setTickets] = useState([]);
+  const [image, setImage] = useState(null);
+  const [processingForChk, setProcessingForChk] = useState(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const [errorMessage, setErrorMessage] = useState(null);
-  const [manualEntry, setManualEntry] = useState(false);
-  const [manualData, setManualData] = useState({ chk: "", cardType: "", amount: "" });
-  const [capturedImage, setCapturedImage] = useState(null);
 
   const startCamera = async () => {
-    setErrorMessage(null); // Reset error message
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } }, // Attempt rear camera
+        video: { facingMode: { exact: "environment" } }, // Intentar usar cámara trasera
       });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
       }
     } catch (error) {
-      console.error("Error accessing the rear camera:", error);
-      setErrorMessage("Unable to access the rear camera. Trying default camera...");
-      // Attempt default camera
+      console.error("Error accessing the rear camera. Falling back to default camera.");
+      // Fallback a cualquier cámara disponible
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         if (videoRef.current) {
@@ -30,7 +31,7 @@ const App = () => {
         }
       } catch (fallbackError) {
         console.error("Error accessing any camera:", fallbackError);
-        setErrorMessage("Could not access any camera. Please check permissions and try again.");
+        alert("Could not access any camera. Please check permissions.");
       }
     }
   };
@@ -38,121 +39,147 @@ const App = () => {
   const captureImage = () => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
+
     if (video && canvas) {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       const context = canvas.getContext("2d");
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
       const imageData = canvas.toDataURL("image/png");
-      setCapturedImage(imageData); // Save captured image for further processing
+      setImage(imageData);
     }
   };
 
-  const handleManualEntry = () => {
-    setManualEntry(true); // Enable manual entry mode
+  const processImage = async (chk = null) => {
+    if (!image) return;
+
+    const response = await fetch(image);
+    const blob = await response.blob();
+
+    try {
+      const { data: { text } } = await Tesseract.recognize(blob, "eng");
+
+      const chkMatch = text.match(/CHK\s(\d+)/);
+      const amountMatch = text.match(/SAR\s(\d+(\.\d+)?)/);
+      let cardTypeMatch = text.match(new RegExp(cardTypes.join("|"), "i"));
+
+      const newTicket = {
+        chk: chk || (chkMatch ? chkMatch[1] : "Unknown"),
+        cardType: cardTypeMatch ? cardTypeMatch[0].toUpperCase() : "Unknown",
+        amount: amountMatch ? parseFloat(amountMatch[1]) : 0,
+      };
+
+      setTickets((prevTickets) => {
+        const existingIndex = prevTickets.findIndex(t => t.chk === newTicket.chk);
+
+        if (existingIndex >= 0) {
+          return prevTickets.map((t, i) =>
+            i === existingIndex
+              ? {
+                  ...t,
+                  amount: t.amount + newTicket.amount,
+                  cardType: `${t.cardType}, ${newTicket.cardType}`,
+                }
+              : t
+          );
+        }
+
+        return [...prevTickets, newTicket];
+      });
+
+      setImage(null); // Clear image after processing
+    } catch (error) {
+      console.error("Error processing the image:", error);
+    }
   };
 
-  const handleManualSubmit = (e) => {
-    e.preventDefault();
-    console.log("Manual Data Submitted:", manualData);
-    setManualEntry(false);
-    setManualData({ chk: "", cardType: "", amount: "" }); // Reset manual data
-  };
-
-  const handleManualChange = (e) => {
-    const { name, value } = e.target;
-    setManualData((prev) => ({ ...prev, [name]: value }));
+  const handleDownloadExcel = () => {
+    const worksheet = XLSX.utils.json_to_sheet(tickets);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Tickets");
+    XLSX.writeFile(workbook, "tickets.xlsx");
   };
 
   return (
     <div className="min-h-screen bg-gray-100 p-5">
-      <h1 className="text-2xl font-bold text-center mb-5">Camera Test with Manual Validation</h1>
+      <h1 className="text-2xl font-bold text-center mb-5">Ticket Scanner</h1>
 
-      {errorMessage && (
-        <p className="text-red-500 text-center mb-4">{errorMessage}</p>
-      )}
-
-      <div className="relative w-full max-w-md aspect-w-16 aspect-h-9 bg-black rounded-md overflow-hidden">
-        <video
-          ref={videoRef}
-          className="absolute top-0 left-0 w-full h-full object-cover"
-          autoPlay
-          muted
-          playsInline
-        />
-      </div>
-
-      <div className="flex space-x-2 mt-4 justify-center">
-        <button
-          onClick={startCamera}
-          className="bg-green-500 text-white px-4 py-2 rounded"
-        >
-          Start Camera
-        </button>
-        <button
-          onClick={captureImage}
-          className="bg-blue-500 text-white px-4 py-2 rounded"
-        >
-          Capture Image
-        </button>
-        <button
-          onClick={handleManualEntry}
-          className="bg-yellow-500 text-white px-4 py-2 rounded"
-        >
-          Manual Validation
-        </button>
-      </div>
-
-      {capturedImage && (
-        <div className="mt-4">
-          <img src={capturedImage} alt="Captured" className="border rounded-md mb-4 w-full max-w-md" />
-          <p className="text-center text-gray-600">Captured Image</p>
+      <div className="flex flex-col items-center space-y-4">
+        <div className="camera-wrapper relative w-full max-w-md aspect-w-16 aspect-h-9 bg-black rounded-md overflow-hidden">
+          <video
+            ref={videoRef}
+            className="absolute top-0 left-0 w-full h-full object-cover"
+            autoPlay
+            muted
+            playsInline // Evita comportamiento flotante en móviles
+          />
         </div>
-      )}
 
-      {manualEntry && (
-        <form onSubmit={handleManualSubmit} className="mt-4 space-y-4">
-          <div>
-            <label className="block text-gray-700">CHK:</label>
-            <input
-              type="text"
-              name="chk"
-              value={manualData.chk}
-              onChange={handleManualChange}
-              className="w-full border border-gray-300 px-4 py-2 rounded"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-gray-700">Card Type:</label>
-            <input
-              type="text"
-              name="cardType"
-              value={manualData.cardType}
-              onChange={handleManualChange}
-              className="w-full border border-gray-300 px-4 py-2 rounded"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-gray-700">Amount:</label>
-            <input
-              type="number"
-              name="amount"
-              value={manualData.amount}
-              onChange={handleManualChange}
-              className="w-full border border-gray-300 px-4 py-2 rounded"
-              required
-            />
-          </div>
+        <div className="flex space-x-2">
           <button
-            type="submit"
-            className="bg-green-500 text-white px-4 py-2 rounded mt-2"
+            onClick={startCamera}
+            className="bg-green-500 text-white px-4 py-2 rounded"
           >
-            Submit
+            Start Camera
           </button>
-        </form>
-      )}
+          <button
+            onClick={captureImage}
+            className="bg-blue-500 text-white px-4 py-2 rounded"
+          >
+            Capture Image
+          </button>
+        </div>
+
+        {image && (
+          <div className="image-preview mt-4">
+            <img src={image} alt="Captured" className="border rounded-md mb-4 w-full max-w-md" />
+            <button
+              onClick={() => processImage(processingForChk)}
+              className="bg-yellow-500 text-white px-4 py-2 rounded"
+            >
+              Process Image
+            </button>
+          </div>
+        )}
+
+        <table className="table-auto border-collapse border border-gray-300 w-full text-left mt-4">
+          <thead>
+            <tr>
+              <th className="border border-gray-300 px-4 py-2">CHK</th>
+              <th className="border border-gray-300 px-4 py-2">Card Type</th>
+              <th className="border border-gray-300 px-4 py-2">Amount</th>
+              <th className="border border-gray-300 px-4 py-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tickets.map((ticket, index) => (
+              <tr key={index}>
+                <td className="border border-gray-300 px-4 py-2">{ticket.chk}</td>
+                <td className="border border-gray-300 px-4 py-2">{ticket.cardType}</td>
+                <td className="border border-gray-300 px-4 py-2">{ticket.amount.toFixed(2)}</td>
+                <td className="border border-gray-300 px-4 py-2">
+                  <button
+                    onClick={() => {
+                      setProcessingForChk(ticket.chk);
+                      startCamera();
+                    }}
+                    className="bg-blue-500 text-white px-2 py-1 rounded"
+                  >
+                    Add Payment
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <button
+          onClick={handleDownloadExcel}
+          className="bg-purple-500 text-white px-4 py-2 rounded mt-4"
+        >
+          Download Excel
+        </button>
+      </div>
 
       <canvas ref={canvasRef} className="hidden" />
     </div>
