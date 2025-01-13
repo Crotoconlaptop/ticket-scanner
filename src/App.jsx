@@ -4,12 +4,15 @@ const App = () => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [errorMessage, setErrorMessage] = useState(null);
+  const [manualEntry, setManualEntry] = useState(false);
+  const [manualData, setManualData] = useState({ chk: "", cardType: "", amount: "" });
+  const [capturedImage, setCapturedImage] = useState(null);
 
   const startCamera = async () => {
+    setErrorMessage(null); // Reset error message
     try {
-      // Intentar acceder a la cámara trasera
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
+        video: { facingMode: { ideal: "environment" } }, // Attempt rear camera
       });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -17,8 +20,8 @@ const App = () => {
       }
     } catch (error) {
       console.error("Error accessing the rear camera:", error);
-      setErrorMessage("Unable to access the rear camera. Trying default camera.");
-      // Intentar acceder a cualquier cámara disponible
+      setErrorMessage("Unable to access the rear camera. Trying default camera...");
+      // Attempt default camera
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         if (videoRef.current) {
@@ -41,13 +44,29 @@ const App = () => {
       const context = canvas.getContext("2d");
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
       const imageData = canvas.toDataURL("image/png");
-      console.log("Image captured:", imageData);
+      setCapturedImage(imageData); // Save captured image for further processing
     }
+  };
+
+  const handleManualEntry = () => {
+    setManualEntry(true); // Enable manual entry mode
+  };
+
+  const handleManualSubmit = (e) => {
+    e.preventDefault();
+    console.log("Manual Data Submitted:", manualData);
+    setManualEntry(false);
+    setManualData({ chk: "", cardType: "", amount: "" }); // Reset manual data
+  };
+
+  const handleManualChange = (e) => {
+    const { name, value } = e.target;
+    setManualData((prev) => ({ ...prev, [name]: value }));
   };
 
   return (
     <div className="min-h-screen bg-gray-100 p-5">
-      <h1 className="text-2xl font-bold text-center mb-5">Camera Test</h1>
+      <h1 className="text-2xl font-bold text-center mb-5">Camera Test with Manual Validation</h1>
 
       {errorMessage && (
         <p className="text-red-500 text-center mb-4">{errorMessage}</p>
@@ -76,7 +95,64 @@ const App = () => {
         >
           Capture Image
         </button>
+        <button
+          onClick={handleManualEntry}
+          className="bg-yellow-500 text-white px-4 py-2 rounded"
+        >
+          Manual Validation
+        </button>
       </div>
+
+      {capturedImage && (
+        <div className="mt-4">
+          <img src={capturedImage} alt="Captured" className="border rounded-md mb-4 w-full max-w-md" />
+          <p className="text-center text-gray-600">Captured Image</p>
+        </div>
+      )}
+
+      {manualEntry && (
+        <form onSubmit={handleManualSubmit} className="mt-4 space-y-4">
+          <div>
+            <label className="block text-gray-700">CHK:</label>
+            <input
+              type="text"
+              name="chk"
+              value={manualData.chk}
+              onChange={handleManualChange}
+              className="w-full border border-gray-300 px-4 py-2 rounded"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-gray-700">Card Type:</label>
+            <input
+              type="text"
+              name="cardType"
+              value={manualData.cardType}
+              onChange={handleManualChange}
+              className="w-full border border-gray-300 px-4 py-2 rounded"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-gray-700">Amount:</label>
+            <input
+              type="number"
+              name="amount"
+              value={manualData.amount}
+              onChange={handleManualChange}
+              className="w-full border border-gray-300 px-4 py-2 rounded"
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            className="bg-green-500 text-white px-4 py-2 rounded mt-2"
+          >
+            Submit
+          </button>
+        </form>
+      )}
 
       <canvas ref={canvasRef} className="hidden" />
     </div>
