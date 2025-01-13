@@ -21,37 +21,40 @@ const App = () => {
   const canvasRef = useRef(null);
 
   /**
-   * Inicia la cámara intentando usar primero la cámara trasera (environment).
-   * Si no está disponible o falla, hace fallback a cualquier cámara disponible.
+   * Inicia la cámara trasera de ser posible, si falla, hace fallback a cualquier cámara.
    */
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { exact: "environment" } }, // Intenta la cámara trasera
-      });
+      // Preferimos la cámara trasera con facingMode: "environment"
+      const constraints = {
+        video: {
+          facingMode: { ideal: "environment" },
+        },
+        audio: false,
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
     } catch (error) {
-      console.error(
-        "Error intentando acceder a la cámara trasera. Intentando la cámara por defecto."
-      );
+      console.error("Error intentando acceder a la cámara trasera:", error);
+      // Fallback: cualquier cámara
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
         if (videoRef.current) {
-          videoRef.current.srcObject = stream;
+          videoRef.current.srcObject = fallbackStream;
           await videoRef.current.play();
         }
       } catch (fallbackError) {
-        console.error("Error al acceder a cualquier cámara:", fallbackError);
-        alert("No se pudo acceder a ninguna cámara. Revisa los permisos.");
+        console.error("No se pudo acceder a ninguna cámara:", fallbackError);
+        alert("No se pudo acceder a ninguna cámara. Revisa los permisos y si estás en https.");
       }
     }
   };
 
   /**
-   * Toma una foto de la vista de la cámara y la guarda como DataURL en el estado.
+   * Captura la foto actual del video y la convierte en DataURL para mostrarla y procesarla.
    */
   const captureImage = () => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -60,40 +63,42 @@ const App = () => {
     const canvas = canvasRef.current;
     const context = canvas.getContext("2d");
 
+    // Ajustamos el canvas al tamaño del video.
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
+    // Dibujamos la imagen del video en el canvas.
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // Obtenemos la imagen como DataURL (png).
     const imageData = canvas.toDataURL("image/png");
     setImage(imageData);
   };
 
   /**
-   * Procesa la imagen usando Tesseract para extraer la información relevante (CHK, Card y monto).
-   * @param {string} chk - Opcionalmente, forzar a que el CHK sea uno específico
-   *                       (para el caso en que estemos añadiendo más pagos al mismo CHK).
+   * Procesa la imagen con Tesseract para extraer CHK, tipo de tarjeta y el monto.
+   * @param {string} chk - (Opcional) CHK específico con el que queremos asociar el ticket.
    */
   const processImage = async (chk = null) => {
     if (!image) return;
 
     try {
-      // Convertimos la dataURL en blob para enviarla a Tesseract
+      // Convertimos la DataURL a blob para Tesseract
       const response = await fetch(image);
       const blob = await response.blob();
 
-      // Realizamos OCR con Tesseract
+      // Reconocemos texto con Tesseract (idioma inglés).
       const {
         data: { text },
       } = await Tesseract.recognize(blob, "eng");
 
-      // Usamos expresiones regulares para encontrar los patrones
+      // Extraemos el número de CHK
       const chkMatch = text.match(/CHK\s(\d+)/i);
+      // Extraemos el monto (lo que sigue a SAR)
       const amountMatch = text.match(/SAR\s(\d+(\.\d+)?)/i);
-
-      // Para el tipo de tarjeta, buscamos si hay coincidencia en cualquiera de las definidas en cardTypes
+      // Buscamos el tipo de tarjeta comparando con nuestra lista
       let cardTypeMatch = text.match(new RegExp(cardTypes.join("|"), "i"));
 
-      // Creamos el nuevo ticket
       const newTicket = {
         chk: chk || (chkMatch ? chkMatch[1] : "Desconocido"),
         cardType: cardTypeMatch ? cardTypeMatch[0].toUpperCase() : "DESCONOCIDO",
@@ -102,13 +107,13 @@ const App = () => {
 
       // Actualizamos el estado de tickets
       setTickets((prevTickets) => {
-        // Verificamos si ya existe un ticket con el mismo CHK
+        // Ver si ya tenemos ese mismo CHK para sumar montos
         const existingIndex = prevTickets.findIndex(
           (t) => t.chk === newTicket.chk
         );
 
         if (existingIndex >= 0) {
-          // Ya existe, sumamos montos y concatenamos tipos de tarjeta
+          // Ya existe: sumamos montos y concatenamos tipos de tarjeta
           return prevTickets.map((t, i) =>
             i === existingIndex
               ? {
@@ -119,12 +124,12 @@ const App = () => {
               : t
           );
         } else {
-          // No existe, agregamos uno nuevo
+          // No existe: agregamos un nuevo registro
           return [...prevTickets, newTicket];
         }
       });
 
-      // Limpiamos la imagen mostrada tras procesarla
+      // Limpiamos la imagen de la vista previa
       setImage(null);
     } catch (error) {
       console.error("Error procesando la imagen:", error);
@@ -132,7 +137,7 @@ const App = () => {
   };
 
   /**
-   * Descarga la tabla de tickets en un archivo Excel.
+   * Genera un archivo Excel con los tickets actuales.
    */
   const handleDownloadExcel = () => {
     if (tickets.length === 0) {
@@ -146,29 +151,28 @@ const App = () => {
   };
 
   /**
-   * Reinicia la tabla de tickets.
+   * Limpia la tabla de tickets.
    */
   const handleClearTickets = () => {
     setTickets([]);
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 p-5">
-      <h1 className="text-2xl font-bold text-center mb-5">Ticket Scanner</h1>
+    <div className="min-h-screen bg-gray-100 p-4">
+      <h1 className="text-2xl font-bold text-center mb-4">Ticket Scanner</h1>
 
-      <div className="flex flex-col items-center space-y-4">
-        {/* Sección de la cámara */}
-        <div className="camera-wrapper relative w-full max-w-md aspect-w-16 aspect-h-9 bg-black rounded-md overflow-hidden">
-          <video
-            ref={videoRef}
-            className="absolute top-0 left-0 w-full h-full object-cover"
-            autoPlay
-            muted
-            playsInline
-          />
-        </div>
+      {/* Sección de cámara */}
+      <div className="flex flex-col items-center w-full space-y-2">
+        {/* El video se muestra en todo el ancho posible, auto-height para ser responsivo */}
+        <video
+          ref={videoRef}
+          className="w-full max-w-md rounded-md bg-black"
+          style={{ maxHeight: "80vh" }}
+          autoPlay
+          muted
+          playsInline
+        />
 
-        {/* Botones para iniciar cámara y capturar imagen */}
         <div className="flex space-x-2">
           <button
             onClick={startCamera}
@@ -183,79 +187,78 @@ const App = () => {
             Capturar Imagen
           </button>
         </div>
-
-        {/* Vista previa de la imagen capturada y botón de procesar */}
-        {image && (
-          <div className="image-preview mt-4 flex flex-col items-center">
-            <img
-              src={image}
-              alt="Captured"
-              className="border rounded-md mb-4 w-full max-w-md"
-            />
-            <button
-              onClick={() => processImage(processingForChk)}
-              className="bg-yellow-500 text-white px-4 py-2 rounded"
-            >
-              Procesar Imagen
-            </button>
-          </div>
-        )}
-
-        {/* Tabla de resultados */}
-        <table className="table-auto border-collapse border border-gray-300 w-full text-left mt-4">
-          <thead>
-            <tr>
-              <th className="border border-gray-300 px-4 py-2">CHK</th>
-              <th className="border border-gray-300 px-4 py-2">Tarjeta</th>
-              <th className="border border-gray-300 px-4 py-2">Monto</th>
-              <th className="border border-gray-300 px-4 py-2">Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tickets.map((ticket, index) => (
-              <tr key={index}>
-                <td className="border border-gray-300 px-4 py-2">{ticket.chk}</td>
-                <td className="border border-gray-300 px-4 py-2">
-                  {ticket.cardType}
-                </td>
-                <td className="border border-gray-300 px-4 py-2">
-                  {ticket.amount.toFixed(2)}
-                </td>
-                <td className="border border-gray-300 px-4 py-2">
-                  {/* Botón para añadir otro pago al mismo CHK */}
-                  <button
-                    onClick={() => {
-                      setProcessingForChk(ticket.chk);
-                      startCamera();
-                    }}
-                    className="bg-blue-600 text-white px-2 py-1 rounded"
-                  >
-                    Agregar Pago
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {/* Botones de exportación y limpieza de tabla */}
-        <div className="flex space-x-2 mt-4">
-          <button
-            onClick={handleDownloadExcel}
-            className="bg-purple-600 text-white px-4 py-2 rounded"
-          >
-            Descargar Excel
-          </button>
-          <button
-            onClick={handleClearTickets}
-            className="bg-red-600 text-white px-4 py-2 rounded"
-          >
-            Reiniciar Tabla
-          </button>
-        </div>
       </div>
 
-      {/* Canvas oculto para render de la imagen antes de convertirla en DataURL */}
+      {/* Vista previa de la imagen capturada */}
+      {image && (
+        <div className="my-4 flex flex-col items-center">
+          <img
+            src={image}
+            alt="Captured"
+            className="border rounded-md w-full max-w-md mb-2"
+          />
+          <button
+            onClick={() => processImage(processingForChk)}
+            className="bg-yellow-500 text-white px-4 py-2 rounded"
+          >
+            Procesar Imagen
+          </button>
+        </div>
+      )}
+
+      {/* Tabla de resultados */}
+      <table className="table-auto border-collapse border border-gray-300 w-full max-w-md mx-auto text-left mt-4">
+        <thead>
+          <tr>
+            <th className="border border-gray-300 px-4 py-2">CHK</th>
+            <th className="border border-gray-300 px-4 py-2">Tarjeta</th>
+            <th className="border border-gray-300 px-4 py-2">Monto</th>
+            <th className="border border-gray-300 px-4 py-2">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tickets.map((ticket, index) => (
+            <tr key={index}>
+              <td className="border border-gray-300 px-4 py-2">{ticket.chk}</td>
+              <td className="border border-gray-300 px-4 py-2">
+                {ticket.cardType}
+              </td>
+              <td className="border border-gray-300 px-4 py-2">
+                {ticket.amount.toFixed(2)}
+              </td>
+              <td className="border border-gray-300 px-4 py-2">
+                <button
+                  onClick={() => {
+                    setProcessingForChk(ticket.chk);
+                    startCamera();
+                  }}
+                  className="bg-blue-600 text-white px-2 py-1 rounded"
+                >
+                  Agregar Pago
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* Botones para Excel y limpiar tabla */}
+      <div className="flex justify-center space-x-2 mt-4">
+        <button
+          onClick={handleDownloadExcel}
+          className="bg-purple-600 text-white px-4 py-2 rounded"
+        >
+          Descargar Excel
+        </button>
+        <button
+          onClick={handleClearTickets}
+          className="bg-red-600 text-white px-4 py-2 rounded"
+        >
+          Reiniciar Tabla
+        </button>
+      </div>
+
+      {/* Canvas oculto para la captura de la imagen */}
       <canvas ref={canvasRef} className="hidden" />
     </div>
   );
