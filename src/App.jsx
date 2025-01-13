@@ -17,8 +17,10 @@ const App = () => {
   const [image, setImage] = useState(null);
   const [processingForChk, setProcessingForChk] = useState(null);
 
-  // Para el formulario manual
+  // Controlar si se muestra u oculta el formulario manual
   const [showManualForm, setShowManualForm] = useState(false);
+
+  // Datos del formulario manual
   const [manualChk, setManualChk] = useState("");
   const [manualCardType, setManualCardType] = useState("");
   const [manualAmount, setManualAmount] = useState("");
@@ -32,9 +34,7 @@ const App = () => {
   const startCamera = async () => {
     try {
       const constraints = {
-        video: {
-          facingMode: { ideal: "environment" },
-        },
+        video: { facingMode: { ideal: "environment" } },
         audio: false,
       };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -44,6 +44,7 @@ const App = () => {
       }
     } catch (error) {
       console.error("Error intentando acceder a la cámara trasera:", error);
+      // Fallback a cualquier cámara
       try {
         const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
         if (videoRef.current) {
@@ -77,6 +78,7 @@ const App = () => {
 
   /**
    * Procesa la imagen con Tesseract para extraer: CHK, tipo de tarjeta y monto.
+   * Puede forzar un CHK específico (por ejemplo, si estamos agregando más pagos a un CHK ya existente).
    */
   const processImage = async (chk = null) => {
     if (!image) return;
@@ -84,7 +86,9 @@ const App = () => {
     try {
       const response = await fetch(image);
       const blob = await response.blob();
-      const { data: { text } } = await Tesseract.recognize(blob, "eng");
+      const {
+        data: { text },
+      } = await Tesseract.recognize(blob, "eng");
 
       // Buscamos el número de CHK
       const chkMatch = text.match(/CHK\s(\d+)/i);
@@ -107,12 +111,13 @@ const App = () => {
   };
 
   /**
-   * Agrega o fusiona un ticket en la tabla, sumando montos y concatenando tarjetas
-   * si se repite el mismo CHK.
+   * Funde o agrega un ticket en el arreglo, sumando montos y concatenando tarjetas si ya existe el mismo CHK.
    */
   const mergeTicket = (newTicket) => {
     setTickets((prevTickets) => {
-      const existingIndex = prevTickets.findIndex((t) => t.chk === newTicket.chk);
+      const existingIndex = prevTickets.findIndex(
+        (t) => t.chk === newTicket.chk
+      );
       if (existingIndex >= 0) {
         return prevTickets.map((t, i) =>
           i === existingIndex
@@ -130,11 +135,11 @@ const App = () => {
   };
 
   /**
-   * Maneja el envío de datos manuales.
+   * Maneja el "submit" del formulario manual para agregar/corregir datos.
    */
   const handleAddManualTicket = () => {
     if (!manualChk || !manualCardType || !manualAmount) {
-      alert("Por favor, completa todos los campos antes de agregar.");
+      alert("Por favor, completa todos los campos.");
       return;
     }
 
@@ -150,7 +155,7 @@ const App = () => {
     setManualChk("");
     setManualCardType("");
     setManualAmount("");
-    setShowManualForm(false); // opcional: ocultar el formulario después de agregar
+    setShowManualForm(false);
   };
 
   /**
@@ -222,20 +227,54 @@ const App = () => {
         </div>
       )}
 
-      {/* Botón para mostrar/ocultar el formulario manual */}
-      <div className="flex justify-center mt-4">
-        <button
-          onClick={() => setShowManualForm(!showManualForm)}
-          className="bg-gray-600 text-white px-4 py-2 rounded"
-        >
-          {showManualForm ? "Ocultar Ingreso Manual" : "Agregar Datos Manualmente"}
-        </button>
-      </div>
+      {/* Tabla de resultados */}
+      <table className="table-auto border-collapse border border-gray-300 w-full max-w-md mx-auto text-left mt-4">
+        <thead>
+          <tr>
+            <th className="border border-gray-300 px-4 py-2">CHK</th>
+            <th className="border border-gray-300 px-4 py-2">Tarjeta</th>
+            <th className="border border-gray-300 px-4 py-2">Monto</th>
+            <th className="border border-gray-300 px-4 py-2">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tickets.map((ticket, index) => (
+            <tr key={index}>
+              <td className="border border-gray-300 px-4 py-2">{ticket.chk}</td>
+              <td className="border border-gray-300 px-4 py-2">
+                {ticket.cardType}
+              </td>
+              <td className="border border-gray-300 px-4 py-2">
+                {ticket.amount.toFixed(2)}
+              </td>
+              <td className="border border-gray-300 px-4 py-2">
+                {/* Reemplazamos el botón "Agregar Pago" por "Agregar Datos Manualmente" */}
+                <button
+                  onClick={() => {
+                    // Si quieres corregir EXACTAMENTE este ticket, 
+                    // podrías precargar sus datos, pero aquí:
+                    // 1) Dejamos el CHK igual, para fusionar pagos al mismo CHK
+                    // 2) Limpiamos tarjeta y monto, para que agregue un nuevo pago
+                    setManualChk(ticket.chk);
+                    setManualCardType("");
+                    setManualAmount("");
+                    setShowManualForm(true);
+                  }}
+                  className="bg-gray-600 text-white px-2 py-1 rounded"
+                >
+                  Agregar Datos Manualmente
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
-      {/* Formulario para ingreso manual de datos */}
+      {/* Formulario manual (se muestra sólo si showManualForm === true) */}
       {showManualForm && (
         <div className="max-w-md mx-auto bg-white shadow-md rounded px-4 py-4 mt-4">
-          <h2 className="text-lg font-semibold mb-2">Ingresar Ticket Manualmente</h2>
+          <h2 className="text-lg font-semibold mb-2">Ingresar/Corregir Datos Manualmente</h2>
+
           <div className="mb-2">
             <label className="block text-sm font-medium">CHK</label>
             <input
@@ -275,51 +314,22 @@ const App = () => {
             />
           </div>
 
-          <button
-            onClick={handleAddManualTicket}
-            className="bg-blue-600 text-white px-4 py-2 rounded"
-          >
-            Agregar Manual
-          </button>
+          <div className="flex space-x-2">
+            <button
+              onClick={handleAddManualTicket}
+              className="bg-blue-600 text-white px-4 py-2 rounded"
+            >
+              Agregar/Corregir
+            </button>
+            <button
+              onClick={() => setShowManualForm(false)}
+              className="bg-red-600 text-white px-4 py-2 rounded"
+            >
+              Cancelar
+            </button>
+          </div>
         </div>
       )}
-
-      {/* Tabla de resultados */}
-      <table className="table-auto border-collapse border border-gray-300 w-full max-w-md mx-auto text-left mt-4">
-        <thead>
-          <tr>
-            <th className="border border-gray-300 px-4 py-2">CHK</th>
-            <th className="border border-gray-300 px-4 py-2">Tarjeta</th>
-            <th className="border border-gray-300 px-4 py-2">Monto</th>
-            <th className="border border-gray-300 px-4 py-2">Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          {tickets.map((ticket, index) => (
-            <tr key={index}>
-              <td className="border border-gray-300 px-4 py-2">{ticket.chk}</td>
-              <td className="border border-gray-300 px-4 py-2">
-                {ticket.cardType}
-              </td>
-              <td className="border border-gray-300 px-4 py-2">
-                {ticket.amount.toFixed(2)}
-              </td>
-              <td className="border border-gray-300 px-4 py-2">
-                {/* Botón para añadir otro pago al mismo CHK (reiniciando la cámara) */}
-                <button
-                  onClick={() => {
-                    setProcessingForChk(ticket.chk);
-                    startCamera();
-                  }}
-                  className="bg-blue-600 text-white px-2 py-1 rounded"
-                >
-                  Agregar Pago
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
 
       {/* Botones de exportar e limpiar tabla */}
       <div className="flex justify-center space-x-2 mt-4">
