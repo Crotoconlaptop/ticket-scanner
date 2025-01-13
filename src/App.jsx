@@ -17,15 +17,20 @@ const App = () => {
   const [image, setImage] = useState(null);
   const [processingForChk, setProcessingForChk] = useState(null);
 
+  // Para el formulario manual
+  const [showManualForm, setShowManualForm] = useState(false);
+  const [manualChk, setManualChk] = useState("");
+  const [manualCardType, setManualCardType] = useState("");
+  const [manualAmount, setManualAmount] = useState("");
+
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
   /**
-   * Inicia la cámara trasera de ser posible, si falla, hace fallback a cualquier cámara.
+   * Inicia la cámara (intenta la trasera, si falla hace fallback).
    */
   const startCamera = async () => {
     try {
-      // Preferimos la cámara trasera con facingMode: "environment"
       const constraints = {
         video: {
           facingMode: { ideal: "environment" },
@@ -39,7 +44,6 @@ const App = () => {
       }
     } catch (error) {
       console.error("Error intentando acceder a la cámara trasera:", error);
-      // Fallback: cualquier cámara
       try {
         const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
         if (videoRef.current) {
@@ -48,13 +52,13 @@ const App = () => {
         }
       } catch (fallbackError) {
         console.error("No se pudo acceder a ninguna cámara:", fallbackError);
-        alert("No se pudo acceder a ninguna cámara. Revisa los permisos y si estás en https.");
+        alert("No se pudo acceder a la cámara. Verifica permisos y si estás en HTTPS.");
       }
     }
   };
 
   /**
-   * Captura la foto actual del video y la convierte en DataURL para mostrarla y procesarla.
+   * Captura la imagen del video y la guarda como DataURL.
    */
   const captureImage = () => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -63,40 +67,30 @@ const App = () => {
     const canvas = canvasRef.current;
     const context = canvas.getContext("2d");
 
-    // Ajustamos el canvas al tamaño del video.
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-
-    // Dibujamos la imagen del video en el canvas.
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // Obtenemos la imagen como DataURL (png).
     const imageData = canvas.toDataURL("image/png");
     setImage(imageData);
   };
 
   /**
-   * Procesa la imagen con Tesseract para extraer CHK, tipo de tarjeta y el monto.
-   * @param {string} chk - (Opcional) CHK específico con el que queremos asociar el ticket.
+   * Procesa la imagen con Tesseract para extraer: CHK, tipo de tarjeta y monto.
    */
   const processImage = async (chk = null) => {
     if (!image) return;
 
     try {
-      // Convertimos la DataURL a blob para Tesseract
       const response = await fetch(image);
       const blob = await response.blob();
+      const { data: { text } } = await Tesseract.recognize(blob, "eng");
 
-      // Reconocemos texto con Tesseract (idioma inglés).
-      const {
-        data: { text },
-      } = await Tesseract.recognize(blob, "eng");
-
-      // Extraemos el número de CHK
+      // Buscamos el número de CHK
       const chkMatch = text.match(/CHK\s(\d+)/i);
-      // Extraemos el monto (lo que sigue a SAR)
+      // Buscamos el monto (después de SAR)
       const amountMatch = text.match(/SAR\s(\d+(\.\d+)?)/i);
-      // Buscamos el tipo de tarjeta comparando con nuestra lista
+      // Buscamos el tipo de tarjeta
       let cardTypeMatch = text.match(new RegExp(cardTypes.join("|"), "i"));
 
       const newTicket = {
@@ -105,31 +99,7 @@ const App = () => {
         amount: amountMatch ? parseFloat(amountMatch[1]) : 0,
       };
 
-      // Actualizamos el estado de tickets
-      setTickets((prevTickets) => {
-        // Ver si ya tenemos ese mismo CHK para sumar montos
-        const existingIndex = prevTickets.findIndex(
-          (t) => t.chk === newTicket.chk
-        );
-
-        if (existingIndex >= 0) {
-          // Ya existe: sumamos montos y concatenamos tipos de tarjeta
-          return prevTickets.map((t, i) =>
-            i === existingIndex
-              ? {
-                  ...t,
-                  amount: t.amount + newTicket.amount,
-                  cardType: `${t.cardType}, ${newTicket.cardType}`,
-                }
-              : t
-          );
-        } else {
-          // No existe: agregamos un nuevo registro
-          return [...prevTickets, newTicket];
-        }
-      });
-
-      // Limpiamos la imagen de la vista previa
+      mergeTicket(newTicket);
       setImage(null);
     } catch (error) {
       console.error("Error procesando la imagen:", error);
@@ -137,7 +107,54 @@ const App = () => {
   };
 
   /**
-   * Genera un archivo Excel con los tickets actuales.
+   * Agrega o fusiona un ticket en la tabla, sumando montos y concatenando tarjetas
+   * si se repite el mismo CHK.
+   */
+  const mergeTicket = (newTicket) => {
+    setTickets((prevTickets) => {
+      const existingIndex = prevTickets.findIndex((t) => t.chk === newTicket.chk);
+      if (existingIndex >= 0) {
+        return prevTickets.map((t, i) =>
+          i === existingIndex
+            ? {
+                ...t,
+                amount: t.amount + newTicket.amount,
+                cardType: `${t.cardType}, ${newTicket.cardType}`,
+              }
+            : t
+        );
+      } else {
+        return [...prevTickets, newTicket];
+      }
+    });
+  };
+
+  /**
+   * Maneja el envío de datos manuales.
+   */
+  const handleAddManualTicket = () => {
+    if (!manualChk || !manualCardType || !manualAmount) {
+      alert("Por favor, completa todos los campos antes de agregar.");
+      return;
+    }
+
+    const newTicket = {
+      chk: manualChk.trim(),
+      cardType: manualCardType.toUpperCase(),
+      amount: parseFloat(manualAmount),
+    };
+
+    mergeTicket(newTicket);
+
+    // Limpiamos el formulario
+    setManualChk("");
+    setManualCardType("");
+    setManualAmount("");
+    setShowManualForm(false); // opcional: ocultar el formulario después de agregar
+  };
+
+  /**
+   * Descarga los datos en un archivo Excel.
    */
   const handleDownloadExcel = () => {
     if (tickets.length === 0) {
@@ -163,10 +180,9 @@ const App = () => {
 
       {/* Sección de cámara */}
       <div className="flex flex-col items-center w-full space-y-2">
-        {/* El video se muestra en todo el ancho posible, auto-height para ser responsivo */}
         <video
           ref={videoRef}
-          className="w-full max-w-md rounded-md bg-black"
+          className="w-full max-w-md bg-black rounded-md"
           style={{ maxHeight: "80vh" }}
           autoPlay
           muted
@@ -206,6 +222,68 @@ const App = () => {
         </div>
       )}
 
+      {/* Botón para mostrar/ocultar el formulario manual */}
+      <div className="flex justify-center mt-4">
+        <button
+          onClick={() => setShowManualForm(!showManualForm)}
+          className="bg-gray-600 text-white px-4 py-2 rounded"
+        >
+          {showManualForm ? "Ocultar Ingreso Manual" : "Agregar Datos Manualmente"}
+        </button>
+      </div>
+
+      {/* Formulario para ingreso manual de datos */}
+      {showManualForm && (
+        <div className="max-w-md mx-auto bg-white shadow-md rounded px-4 py-4 mt-4">
+          <h2 className="text-lg font-semibold mb-2">Ingresar Ticket Manualmente</h2>
+          <div className="mb-2">
+            <label className="block text-sm font-medium">CHK</label>
+            <input
+              type="text"
+              value={manualChk}
+              onChange={(e) => setManualChk(e.target.value)}
+              className="w-full border border-gray-300 rounded p-2 mt-1"
+              placeholder="Ej: 201897"
+            />
+          </div>
+
+          <div className="mb-2">
+            <label className="block text-sm font-medium">Tipo de Tarjeta</label>
+            <select
+              value={manualCardType}
+              onChange={(e) => setManualCardType(e.target.value)}
+              className="w-full border border-gray-300 rounded p-2 mt-1"
+            >
+              <option value="">Selecciona el tipo de tarjeta</option>
+              {cardTypes.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mb-2">
+            <label className="block text-sm font-medium">Monto</label>
+            <input
+              type="number"
+              step="0.01"
+              value={manualAmount}
+              onChange={(e) => setManualAmount(e.target.value)}
+              className="w-full border border-gray-300 rounded p-2 mt-1"
+              placeholder="Ej: 125.00"
+            />
+          </div>
+
+          <button
+            onClick={handleAddManualTicket}
+            className="bg-blue-600 text-white px-4 py-2 rounded"
+          >
+            Agregar Manual
+          </button>
+        </div>
+      )}
+
       {/* Tabla de resultados */}
       <table className="table-auto border-collapse border border-gray-300 w-full max-w-md mx-auto text-left mt-4">
         <thead>
@@ -227,6 +305,7 @@ const App = () => {
                 {ticket.amount.toFixed(2)}
               </td>
               <td className="border border-gray-300 px-4 py-2">
+                {/* Botón para añadir otro pago al mismo CHK (reiniciando la cámara) */}
                 <button
                   onClick={() => {
                     setProcessingForChk(ticket.chk);
@@ -242,7 +321,7 @@ const App = () => {
         </tbody>
       </table>
 
-      {/* Botones para Excel y limpiar tabla */}
+      {/* Botones de exportar e limpiar tabla */}
       <div className="flex justify-center space-x-2 mt-4">
         <button
           onClick={handleDownloadExcel}
@@ -258,7 +337,7 @@ const App = () => {
         </button>
       </div>
 
-      {/* Canvas oculto para la captura de la imagen */}
+      {/* Canvas oculto para la captura */}
       <canvas ref={canvasRef} className="hidden" />
     </div>
   );
